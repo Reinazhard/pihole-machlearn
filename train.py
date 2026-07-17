@@ -18,7 +18,9 @@ def fetch_data():
 
     print("Fetching ad domains from gravity.db...")
     # Fetch known ad domains (limit to 50k to balance dataset and speed up training)
+    # Using ignore errors for utf8 decoding
     conn_grav = sqlite3.connect(GRAVITY_DB)
+    conn_grav.text_factory = lambda b: b.decode(errors='ignore')
     df_ads = pd.read_sql_query("SELECT domain FROM gravity LIMIT 50000", conn_grav)
     conn_grav.close()
     df_ads['label'] = 1
@@ -27,6 +29,7 @@ def fetch_data():
     # Fetch safe domains (status 2 or 3 = forwarded/cached, i.e., allowed)
     # Using group by to get the most frequently queried allowed domains
     conn_ftl = sqlite3.connect(FTL_DB)
+    conn_ftl.text_factory = lambda b: b.decode(errors='ignore')
     df_safe = pd.read_sql_query("""
         SELECT domain FROM queries 
         WHERE status IN (2, 3) AND domain != ''
