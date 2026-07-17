@@ -13,6 +13,7 @@ TIME_WINDOW_SEC = 300 # 5 minutes
 
 def get_recent_allowed_domains():
     conn = sqlite3.connect(FTL_DB)
+    conn.text_factory = lambda b: b.decode(errors='ignore')
     recent_timestamp = int(time.time()) - TIME_WINDOW_SEC
     
     # status 2 = forwarded, 3 = cached (both mean it was allowed)
