@@ -1,20 +1,65 @@
 import sqlite3
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.pipeline import make_pipeline
-from sklearn.pipeline import FeatureUnion
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
-import joblib
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+import onnx
 import os
 import sys
 import requests
 
 GRAVITY_DB = os.environ.get('GRAVITY_DB', '/etc/pihole/gravity.db')
 FTL_DB = os.environ.get('FTL_DB', '/etc/pihole/pihole-FTL.db')
-TRANCO_URL = "https://tranco-list.eu/download/J9NWX/1000000"
+MAX_LEN = 100
+BATCH_SIZE = 512
+
+class CharCNN(nn.Module):
+    def __init__(self, vocab_size=256, embed_dim=32, num_classes=2):
+        super(CharCNN, self).__init__()
+        self.embed = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+        
+        self.conv1 = nn.Conv1d(embed_dim, 128, kernel_size=3, padding=1)
+        self.pool1 = nn.MaxPool1d(2)
+        
+        self.conv2 = nn.Conv1d(128, 128, kernel_size=3, padding=1)
+        self.pool2 = nn.MaxPool1d(2)
+        
+        self.conv3 = nn.Conv1d(128, 128, kernel_size=3, padding=1)
+        self.pool3 = nn.MaxPool1d(2)
+        
+        self.fc1 = nn.Linear(128 * (MAX_LEN // 8), 128)
+        self.dropout = nn.Dropout(0.5)
+        self.fc2 = nn.Linear(128, num_classes)
+
+    def forward(self, x):
+        x = self.embed(x) 
+        x = x.transpose(1, 2) 
+        
+        x = torch.relu(self.conv1(x))
+        x = self.pool1(x)
+        
+        x = torch.relu(self.conv2(x))
+        x = self.pool2(x)
+        
+        x = torch.relu(self.conv3(x))
+        x = self.pool3(x)
+        
+        x = x.reshape(x.size(0), -1) 
+        
+        x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = self.fc2(x)
+        return x
+
+def encode_domains(domains):
+    encoded = np.zeros((len(domains), MAX_LEN), dtype=np.int64)
+    for i, d in enumerate(domains):
+        d_bytes = d.encode('utf-8', 'ignore')[:MAX_LEN]
+        for j, b in enumerate(d_bytes):
+            encoded[i, j] = b
+    return encoded
 
 def fetch_data():
     if not os.path.exists(GRAVITY_DB):
@@ -51,30 +96,75 @@ def main():
     df = fetch_data()
     print(f"Total dataset size: {len(df)} domains")
 
-    print("Training TF-IDF + Logistic Regression model...")
-    X = df['domain']
-    y = df['label']
+    print("Encoding domain characters...")
+    X = encode_domains(df['domain'].tolist())
+    y = df['label'].values
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Train/Test Split
+    idx = np.arange(len(X))
+    np.random.shuffle(idx)
+    split = int(0.8 * len(X))
+    train_idx, test_idx = idx[:split], idx[split:]
     
-    # Use character n-grams, extremely effective for finding domain patterns
-    # Combine word-based and char-based n-grams for maximum pattern capture
-    clf = make_pipeline(
-        FeatureUnion([
-            ('char', TfidfVectorizer(analyzer='char_wb', ngram_range=(3, 5), max_features=100000)),
-            ('word', TfidfVectorizer(analyzer='word', token_pattern=r'(?u)\b\w+\b', max_features=50000))
-        ]),
-        LogisticRegression(max_iter=3000, class_weight='balanced', C=50.0, n_jobs=-1)
+    X_train, y_train = torch.tensor(X[train_idx]), torch.tensor(y[train_idx])
+    X_test, y_test = torch.tensor(X[test_idx]), torch.tensor(y[test_idx])
+
+    train_dataset = TensorDataset(X_train, y_train)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    
+    test_dataset = TensorDataset(X_test, y_test)
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Training on device: {device}")
+    
+    model = CharCNN().to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    print("Training Char-CNN...")
+    epochs = 5
+    for epoch in range(epochs):
+        model.train()
+        total_loss = 0
+        for batch_X, batch_y in train_loader:
+            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+            optimizer.zero_grad()
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for batch_X, batch_y in test_loader:
+                batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+                outputs = model(batch_X)
+                _, predicted = torch.max(outputs.data, 1)
+                total += batch_y.size(0)
+                correct += (predicted == batch_y).sum().item()
+                
+        print(f"Epoch {epoch+1}/{epochs} | Loss: {total_loss/len(train_loader):.4f} | Test Acc: {100 * correct / total:.2f}%")
+
+    print("Exporting model to ONNX...")
+    model.eval()
+    model.to('cpu')
+    dummy_input = torch.zeros((1, MAX_LEN), dtype=torch.long)
+    torch.onnx.export(
+        model, 
+        dummy_input, 
+        "model.onnx", 
+        export_params=True, 
+        opset_version=14, 
+        do_constant_folding=True, 
+        input_names=['input'], 
+        output_names=['output'], 
+        dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
     )
-    clf.fit(X_train, y_train)
-
-    print("\nModel Evaluation:")
-    y_pred = clf.predict(X_test)
-    print(classification_report(y_test, y_pred, target_names=['Safe', 'Ad/Tracker']))
-
-    print("Saving model to model.pkl...")
-    joblib.dump(clf, 'model.pkl')
-    print("Done.")
+    print("Exported to model.onnx")
 
 if __name__ == '__main__':
     main()

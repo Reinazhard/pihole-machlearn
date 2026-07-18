@@ -2,3 +2,6 @@ pandas
 scikit-learn
 joblib
 tldextract
+torch
+onnx
+onnxruntime

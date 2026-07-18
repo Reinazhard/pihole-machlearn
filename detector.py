@@ -1,14 +1,17 @@
 import sqlite3
 import pandas as pd
-import joblib
+import onnxruntime as ort
 import subprocess
 import time
 import os
+import numpy as np
 
 GRAVITY_DB = os.environ.get('GRAVITY_DB', '/etc/pihole/gravity.db')
 FTL_DB = os.environ.get('FTL_DB', '/etc/pihole/pihole-FTL.db')
-MODEL_FILE = os.path.join(os.path.dirname(__file__), 'model.pkl')
+MODEL_FILE = os.path.join(os.path.dirname(__file__), 'model.onnx')
 TIME_WINDOW_SEC = 300 # 5 minutes
+MAX_LEN = 100
+CONFIDENCE_THRESHOLD = 0.95
 
 def get_recent_allowed_domains():
     conn = sqlite3.connect(FTL_DB)
@@ -50,7 +53,7 @@ def block_domains(domains):
     
     timestamp = int(time.time())
     # type 1 = exact blacklist
-    records = [(1, domain, 1, timestamp, timestamp, 'Added by ML Detector') for domain in domains]
+    records = [(1, domain, 1, timestamp, timestamp, 'Added by ML Detector (Char-CNN High Confidence)') for domain in domains]
     
     cursor.executemany("""
         INSERT OR IGNORE INTO domainlist 
@@ -62,8 +65,19 @@ def block_domains(domains):
     conn.close()
     
     print("Reloading Pi-hole DNS lists...")
-    # Adjust command based on your docker setup if necessary
     subprocess.run(["docker", "exec", "pihole", "pihole", "restartdns", "reload-lists"], check=False)
+
+def encode_domains(domains):
+    encoded = np.zeros((len(domains), MAX_LEN), dtype=np.int64)
+    for i, d in enumerate(domains):
+        d_bytes = d.encode('utf-8', 'ignore')[:MAX_LEN]
+        for j, b in enumerate(d_bytes):
+            encoded[i, j] = b
+    return encoded
+
+def softmax(x):
+    e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+    return e_x / e_x.sum(axis=1, keepdims=True)
 
 def main():
     if not os.path.exists(MODEL_FILE):
@@ -82,21 +96,26 @@ def main():
         print("All recent domains are already evaluated or blocked.")
         return
 
-    print("Loading model and predicting...")
-    clf = joblib.load(MODEL_FILE)
+    print("Loading ONNX model and predicting...")
+    session = ort.InferenceSession(MODEL_FILE, providers=['CPUExecutionProvider'])
+    input_name = session.get_inputs()[0].name
     
-    # Predict directly on the domain strings
-    predictions = clf.predict(new_domains)
+    X = encode_domains(new_domains)
+    outputs = session.run(None, {input_name: X})[0]
     
-    # Identify which domains were classified as ads (label == 1)
-    detected_ads = [domain for domain, pred in zip(new_domains, predictions) if pred == 1]
+    probabilities = softmax(outputs)
+    ad_probs = probabilities[:, 1]
+    
+    detected_ads = []
+    for domain, prob in zip(new_domains, ad_probs):
+        if prob > CONFIDENCE_THRESHOLD:
+            detected_ads.append(domain)
+            print(f"ML Detected Ad/Tracker: {domain} (Confidence: {prob:.4f})")
     
     if detected_ads:
-        for ad in detected_ads:
-            print(f"ML Detected Ad/Tracker: {ad}")
         block_domains(detected_ads)
     else:
-        print("No new ad/tracker domains detected in this batch.")
+        print("No new ad/tracker domains detected in this batch exceeding the confidence threshold.")
 
 if __name__ == '__main__':
     main()
