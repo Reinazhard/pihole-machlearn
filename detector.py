@@ -39,7 +39,8 @@ def load_top_safe_domains(limit=100000):
         return set()
 
 def get_recent_allowed_domains():
-    conn = sqlite3.connect(FTL_DB)
+    ro_uri = f"file:{FTL_DB}?mode=ro"
+    conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
     conn.text_factory = lambda b: b.decode(errors='ignore')
     recent_timestamp = int(time.time()) - TIME_WINDOW_SEC
     
@@ -58,8 +59,11 @@ def filter_existing_blocks(domains):
     if not domains:
         return []
     
-    conn = sqlite3.connect(GRAVITY_DB)
+    ro_uri = f"file:{GRAVITY_DB}?mode=ro"
+    conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
     placeholders = ','.join('?' for _ in domains)
+    
+    # Check exact blocks (type 1) and exact allows (type 0/2) to skip re-evaluating
     query = f"SELECT domain FROM domainlist WHERE domain IN ({placeholders})"
     cursor = conn.cursor()
     cursor.execute(query, domains)
@@ -68,12 +72,82 @@ def filter_existing_blocks(domains):
     
     return [d for d in domains if d not in existing]
 
+def check_and_apply_wildcard(domains):
+    if not domains:
+        return domains # Return remaining domains to be exact-blocked
+        
+    ro_uri = f"file:{GRAVITY_DB}?mode=ro"
+    conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    cursor = conn.cursor()
+    
+    # Extract root domains to check for DGA wildcard aggregation
+    import tldextract
+    root_counts = {}
+    domain_to_root = {}
+    
+    for d in domains:
+        ext = tldextract.extract(d)
+        root = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
+        domain_to_root[d] = root
+        
+    # Check how many times we've manually blocked subdomains of these roots
+    roots_to_wildcard = set()
+    exact_domains_to_keep = []
+    
+    for d in domains:
+        root = domain_to_root[d]
+        if root in roots_to_wildcard:
+            continue
+            
+        cursor.execute("SELECT COUNT(*) FROM domainlist WHERE type = 1 AND domain LIKE ?", (f"%.{root}",))
+        count = cursor.fetchone()[0]
+        
+        # If we have caught 3+ subdomains of this root, upgrade to wildcard
+        if count >= 3:
+            roots_to_wildcard.add(root)
+        else:
+            exact_domains_to_keep.append(d)
+            
+    conn.close()
+    
+    # Apply Wildcard Blocks
+    if roots_to_wildcard:
+        print(f"Aggregating {len(roots_to_wildcard)} root domains into regex wildcards...")
+        conn_w = sqlite3.connect(GRAVITY_DB, timeout=20.0)
+        cursor_w = conn_w.cursor()
+        timestamp = int(time.time())
+        
+        records = []
+        for root in roots_to_wildcard:
+            # Type 3 = Regex Blacklist
+            regex_str = f"(\.|^){root.replace('.', '\.')}$"
+            records.append((3, regex_str, 1, timestamp, timestamp, 'Added by ML Detector (Wildcard Aggregation)'))
+            
+        cursor_w.executemany("""
+            INSERT OR IGNORE INTO domainlist 
+            (type, domain, enabled, date_added, date_modified, comment) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, records)
+        conn_w.commit()
+        conn_w.close()
+        
+    return exact_domains_to_keep
+
 def block_domains(domains):
     if not domains:
         return
         
-    print(f"Blocking {len(domains)} new ad/tracker domains...")
-    conn = sqlite3.connect(GRAVITY_DB)
+    # 1. Handle DGA Wildcard Aggregation First
+    domains = check_and_apply_wildcard(domains)
+    
+    if not domains:
+        # All caught domains were absorbed by wildcards
+        print("Reloading Pi-hole DNS lists...")
+        subprocess.run(["docker", "exec", "pihole", "pihole", "reloaddns"], check=False)
+        return
+        
+    print(f"Blocking {len(domains)} new exact ad/tracker domains...")
+    conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
     cursor = conn.cursor()
     
     timestamp = int(time.time())
