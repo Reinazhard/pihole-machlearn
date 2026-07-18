@@ -8,8 +8,8 @@ import numpy as np
 
 GRAVITY_DB = os.environ.get('GRAVITY_DB', '/etc/pihole/gravity.db')
 FTL_DB = os.environ.get('FTL_DB', '/etc/pihole/pihole-FTL.db')
-MODEL_FILE = os.path.join(os.path.dirname(__file__), 'model.onnx')
-MAJESTIC_FILE = os.path.join(os.path.dirname(__file__), 'majestic.csv')
+MODEL_FILE = '/app/data/model.onnx' if os.path.exists('/app/data/model.onnx') else os.path.join(os.path.dirname(__file__), 'model.onnx')
+MAJESTIC_FILE = '/app/data/majestic.csv' if os.path.exists('/app/data') else os.path.join(os.path.dirname(__file__), 'majestic.csv')
 TIME_WINDOW_SEC = 300 # 5 minutes
 MAX_LEN = 100
 CONFIDENCE_THRESHOLD = 0.95

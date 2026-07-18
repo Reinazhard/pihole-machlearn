@@ -75,15 +75,16 @@ def fetch_data():
     df_ads['label'] = 1
 
     print("Downloading Majestic Million list for safe domains (to ensure enough data)...")
-    if os.path.exists("majestic.csv"):
+    majestic_path = "/app/data/majestic.csv" if os.path.exists("/app/data") else "majestic.csv"
+    if os.path.exists(majestic_path):
         print("Removing old majestic.csv to force fresh download...")
-        os.remove("majestic.csv")
+        os.remove(majestic_path)
         
     r = requests.get("http://downloads.majestic.com/majestic_million.csv")
-    with open("majestic.csv", "wb") as f:
+    with open(majestic_path, "wb") as f:
         f.write(r.content)
             
-    df_safe = pd.read_csv("majestic.csv", usecols=[2], names=['domain'], header=0)
+    df_safe = pd.read_csv(majestic_path, usecols=[2], names=['domain'], header=0)
     df_safe = df_safe.head(150000) # Match the 150k ads for balance
     df_safe['label'] = 0
     df_safe = df_safe[['domain', 'label']]
@@ -164,14 +165,21 @@ def main():
     torch.onnx.export(
         model, 
         dummy_input, 
-        "model.onnx", 
+        "/app/data/model.onnx" if os.path.exists("/app/data") else "model.onnx", 
         export_params=True, 
-        opset_version=18, # Upgraded opset version to 18 as requested by newer PyTorch versions
+        opset_version=18, 
         do_constant_folding=True, 
         input_names=['input'], 
         output_names=['output'], 
         dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
     )
+    
+    data_path = "/app/data/model.onnx.data" if os.path.exists("/app/data") else "model.onnx.data"
+    if os.path.exists(data_path):
+        try:
+            os.remove(data_path)
+        except:
+            pass
     print("Exported to model.onnx")
 
 if __name__ == '__main__':
