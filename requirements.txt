@@ -9,3 +9,5 @@ onnxscript
 torch
 onnx
 onnxscript
+aiohttp
+aiodns
