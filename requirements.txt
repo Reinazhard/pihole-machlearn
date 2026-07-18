@@ -6,3 +6,6 @@ torch
 onnx
 onnxruntime
 onnxscript
+torch
+onnx
+onnxscript
