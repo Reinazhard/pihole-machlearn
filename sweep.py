@@ -18,26 +18,34 @@ def main():
     
     # 1. Find all exact domains added by the ML detector (type 1)
     cursor.execute(f"SELECT domain FROM domainlist WHERE type = 1 AND comment LIKE '%{COMMENT_FLAG}%'")
-    domains = [row[0] for row in cursor.fetchall()]
+    ml_blocked_domains = [row[0] for row in cursor.fetchall()]
+    
+    # 2. Find all domains the user has manually whitelisted (type 0, 2)
+    cursor.execute("SELECT domain FROM domainlist WHERE type IN (0, 2)")
+    whitelisted_domains = set(row[0] for row in cursor.fetchall())
+    
     conn.close()
     
-    if not domains:
-        print("No new ML exact domains to sweep.")
+    # 3. Read the existing local ml-blocklist.txt
+    existing_file_domains = set()
+    if os.path.exists(ML_LIST_FILE):
+        with open(ML_LIST_FILE, 'r') as f:
+            existing_file_domains = set(line.strip() for line in f if line.strip())
+
+    # 4. Auto-Purge: Remove any domain from our lists if the user explicitly whitelisted it
+    domains_to_write = (existing_file_domains.union(ml_blocked_domains)) - whitelisted_domains
+
+    if not ml_blocked_domains and len(domains_to_write) == len(existing_file_domains):
+        print("No new ML domains to sweep, and no whitelisted domains to purge.")
     else:
-        print(f"Sweeping {len(domains)} domains from domainlist to local adlist...")
+        print(f"Sweeping blocks and purging whitelists. Writing {len(domains_to_write)} domains to local adlist...")
         
-        # 2. Append to the local ml-blocklist.txt
-        existing_domains = set()
-        if os.path.exists(ML_LIST_FILE):
-            with open(ML_LIST_FILE, 'r') as f:
-                existing_domains = set(line.strip() for line in f if line.strip())
-                
-        with open(ML_LIST_FILE, 'a') as f:
-            for domain in domains:
-                if domain not in existing_domains:
-                    f.write(f"{domain}\n")
+        # Rewrite the ml-blocklist.txt cleanly
+        with open(ML_LIST_FILE, 'w') as f:
+            for domain in sorted(domains_to_write):
+                f.write(f"{domain}\n")
                     
-        # 3. Remove them from the domainlist table (Need Write Connection)
+        # Remove the individual ML blocks from the domainlist table (Need Write Connection)
         conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
         cursor = conn.cursor()
         cursor.execute(f"DELETE FROM domainlist WHERE type = 1 AND comment LIKE '%{COMMENT_FLAG}%'")

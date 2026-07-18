@@ -93,8 +93,10 @@ def filter_existing_blocks(domains):
         
     placeholders = ','.join('?' for _ in domains)
     
-    # Check exact blocks (type 1) and exact allows (type 0/2) to skip re-evaluating
-    query = f"SELECT domain FROM domainlist WHERE domain IN ({placeholders})"
+    # Check exact blocks (type 1) and exact allows (type 0/2/4) to skip re-evaluating.
+    # By checking type 0 (Whitelist) and 2 (Regex Whitelist), we prevent the 
+    # detector from ever re-adding a domain the user explicitly allowed in the Pi-hole UI.
+    query = f"SELECT domain FROM domainlist WHERE domain IN ({placeholders}) AND type IN (0, 1, 2, 4)"
     cursor = conn.cursor()
     cursor.execute(query, domains)
     existing = set(row[0] for row in cursor.fetchall())
