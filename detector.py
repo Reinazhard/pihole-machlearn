@@ -43,14 +43,8 @@ def get_recent_allowed_domains():
         print(f"Error: Database {FTL_DB} not found.")
         return []
     
-    # Try normal URI first, fallback to standard if URI fails (Docker mounted volumes can sometimes act weird with URI paths)
-    try:
-        # Construct absolute URI properly
-        abs_path = os.path.abspath(FTL_DB)
-        ro_uri = f"file:{abs_path}?mode=ro"
-        conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
-    except sqlite3.OperationalError:
-        conn = sqlite3.connect(FTL_DB, timeout=20.0)
+    # Use standard connection, Docker volume mapping does not like sqlite URI modes.
+    conn = sqlite3.connect(FTL_DB, timeout=20.0)
         
     conn.text_factory = lambda b: b.decode(errors='ignore')
     recent_timestamp = int(time.time()) - TIME_WINDOW_SEC
@@ -73,12 +67,7 @@ def filter_existing_blocks(domains):
     if not os.path.exists(GRAVITY_DB):
         return domains
     
-    try:
-        abs_path = os.path.abspath(GRAVITY_DB)
-        ro_uri = f"file:{abs_path}?mode=ro"
-        conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
-    except sqlite3.OperationalError:
-        conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
+    conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
         
     placeholders = ','.join('?' for _ in domains)
     
@@ -95,12 +84,7 @@ def check_and_apply_wildcard(domains):
     if not domains:
         return domains # Return remaining domains to be exact-blocked
         
-    try:
-        abs_path = os.path.abspath(GRAVITY_DB)
-        ro_uri = f"file:{abs_path}?mode=ro"
-        conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
-    except sqlite3.OperationalError:
-        conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
+    conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
         
     cursor = conn.cursor()
     

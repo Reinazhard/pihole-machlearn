@@ -11,13 +11,8 @@ def main():
         print("gravity.db not found.")
         return
         
-    # Read-only connection to prevent locking conflicts when reading
-    try:
-        abs_path = os.path.abspath(GRAVITY_DB)
-        ro_uri = f"file:{abs_path}?mode=ro"
-        conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
-    except sqlite3.OperationalError:
-        conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
+    # Standard connection with extended timeout
+    conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
         
     cursor = conn.cursor()
     
