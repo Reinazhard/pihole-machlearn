@@ -88,6 +88,15 @@ def fetch_data():
     df_ads = df_ads.dropna(subset=['domain'])
     df_safe = df_safe.dropna(subset=['domain'])
     
+    # The Majestic Million list contains many popular domains, but the very top tier
+    # (like google.com, facebook.com) might actually be in some aggressive adlists
+    # as subdomains (e.g. ads.google.com). To stop the model from associating the base 
+    # string 'google.com' with ads, we aggressively duplicate the top 100 safe domains
+    # to force the model to heavily penalize false positives on extreme core services.
+    top_100 = df_safe.head(100).copy()
+    top_100_boosted = pd.concat([top_100] * 50, ignore_index=True)
+    df_safe = pd.concat([df_safe, top_100_boosted], ignore_index=True)
+
     print(f"Loaded {len(df_safe)} safe domains and {len(df_ads)} ad domains.")
 
     return pd.concat([df_ads, df_safe], ignore_index=True)
@@ -119,7 +128,11 @@ def main():
     print(f"Training on device: {device}")
     
     model = CharCNN().to(device)
-    criterion = nn.CrossEntropyLoss()
+    # Loss Function with class weights
+    # We heavily penalize false positives (predicting Safe as Ad) by weighting the Safe class (0) higher.
+    # Class 0 weight: 3.0, Class 1 weight: 1.0
+    weights = torch.tensor([3.0, 1.0]).to(device)
+    criterion = nn.CrossEntropyLoss(weight=weights)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     print("Training Char-CNN...")
