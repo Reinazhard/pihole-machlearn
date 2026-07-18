@@ -120,7 +120,9 @@ def check_and_apply_wildcard(domains):
         records = []
         for root in roots_to_wildcard:
             # Type 3 = Regex Blacklist
-            regex_str = f"(\.|^){root.replace('.', '\.')}$"
+            # Avoid backslash in f-string expression part
+            safe_root = root.replace('.', r'\.')
+            regex_str = f"(\\.|^){safe_root}$"
             records.append((3, regex_str, 1, timestamp, timestamp, 'Added by ML Detector (Wildcard Aggregation)'))
             
         cursor_w.executemany("""
