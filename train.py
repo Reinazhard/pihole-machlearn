@@ -74,10 +74,13 @@ def fetch_data():
     df_ads['label'] = 1
 
     print("Downloading Majestic Million list for safe domains (to ensure enough data)...")
-    if not os.path.exists("majestic.csv"):
-        r = requests.get("http://downloads.majestic.com/majestic_million.csv")
-        with open("majestic.csv", "wb") as f:
-            f.write(r.content)
+    if os.path.exists("majestic.csv"):
+        print("Removing old majestic.csv to force fresh download...")
+        os.remove("majestic.csv")
+        
+    r = requests.get("http://downloads.majestic.com/majestic_million.csv")
+    with open("majestic.csv", "wb") as f:
+        f.write(r.content)
             
     df_safe = pd.read_csv("majestic.csv", usecols=[2], names=['domain'], header=0)
     df_safe = df_safe.head(150000) # Match the 150k ads for balance
