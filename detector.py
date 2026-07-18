@@ -25,7 +25,13 @@ INFRASTRUCTURE_SUFFIXES = [
     '.googleusercontent.com',
     '.susercontent.com',
     '.gstatic.com',
-    '.whatsapp.net'
+    '.whatsapp.net',
+    '.facebook.com',
+    '.facebook.net',
+    '.instagram.com',
+    '.discord.gg',
+    '.discordapp.com',
+    '.twimg.com'
 ]
 
 def load_top_safe_domains(limit=100000):
