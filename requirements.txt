@@ -5,3 +5,4 @@ tldextract
 torch
 onnx
 onnxruntime
+onnxscript
