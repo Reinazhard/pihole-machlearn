@@ -23,10 +23,12 @@ INFRASTRUCTURE_SUFFIXES = [
     '.shopeemobile.com',
     '.fbcdn.net',
     '.googleusercontent.com',
-    '.susercontent.com'
+    '.susercontent.com',
+    '.gstatic.com',
+    '.whatsapp.net'
 ]
 
-def load_top_safe_domains(limit=10000):
+def load_top_safe_domains(limit=100000):
     if not os.path.exists(MAJESTIC_FILE):
         return set()
     try:
