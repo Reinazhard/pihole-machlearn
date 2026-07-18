@@ -65,7 +65,7 @@ def block_domains(domains):
     conn.close()
     
     print("Reloading Pi-hole DNS lists...")
-    subprocess.run(["docker", "exec", "pihole", "pihole", "restartdns", "reload-lists"], check=False)
+    subprocess.run(["docker", "exec", "pihole", "pihole", "reloaddns"], check=False)
 
 def encode_domains(domains):
     encoded = np.zeros((len(domains), MAX_LEN), dtype=np.int64)
