@@ -45,7 +45,9 @@ def get_recent_allowed_domains():
     
     # Try normal URI first, fallback to standard if URI fails (Docker mounted volumes can sometimes act weird with URI paths)
     try:
-        ro_uri = f"file:{FTL_DB}?mode=ro"
+        # Construct absolute URI properly
+        abs_path = os.path.abspath(FTL_DB)
+        ro_uri = f"file:{abs_path}?mode=ro"
         conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
     except sqlite3.OperationalError:
         conn = sqlite3.connect(FTL_DB, timeout=20.0)
@@ -72,7 +74,8 @@ def filter_existing_blocks(domains):
         return domains
     
     try:
-        ro_uri = f"file:{GRAVITY_DB}?mode=ro"
+        abs_path = os.path.abspath(GRAVITY_DB)
+        ro_uri = f"file:{abs_path}?mode=ro"
         conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
     except sqlite3.OperationalError:
         conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
@@ -93,7 +96,8 @@ def check_and_apply_wildcard(domains):
         return domains # Return remaining domains to be exact-blocked
         
     try:
-        ro_uri = f"file:{GRAVITY_DB}?mode=ro"
+        abs_path = os.path.abspath(GRAVITY_DB)
+        ro_uri = f"file:{abs_path}?mode=ro"
         conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
     except sqlite3.OperationalError:
         conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)

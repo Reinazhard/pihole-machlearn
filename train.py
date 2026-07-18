@@ -68,7 +68,8 @@ def fetch_data():
 
     print("Fetching ad domains from gravity.db...")
     try:
-        ro_uri = f"file:{GRAVITY_DB}?mode=ro"
+        abs_path = os.path.abspath(GRAVITY_DB)
+        ro_uri = f"file:{abs_path}?mode=ro"
         conn_grav = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
     except sqlite3.OperationalError:
         conn_grav = sqlite3.connect(GRAVITY_DB, timeout=20.0)
