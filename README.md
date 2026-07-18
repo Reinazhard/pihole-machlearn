@@ -13,11 +13,14 @@ cd /home/haru/pihole-llm
 *This will output a `model.onnx` file.*
 
 ## 2. Enable the Background Scanner
-Once the model is trained, you need to enable the cron job. This cron job runs every 5 minutes in the background. It reads the last 5 minutes of allowed queries from Pi-hole, evaluates them with the ONNX model, blocks any new trackers, and reloads Pi-hole.
+Once the model is trained, you need to enable the cron jobs. 
+1. The **Detector** runs every 5 minutes to instantly block new trackers.
+2. The **Sweeper** runs once a day at 3:00 AM to move those individual blocks into a single Pi-hole Adlist file, keeping your Pi-hole web UI perfectly clean.
 
-Run this command in your terminal to enable it:
+Run this command in your terminal to enable both:
 ```bash
 (crontab -l 2>/dev/null; echo "*/5 * * * * cd /home/haru/pihole-llm && ./venv/bin/python detector.py >> detector.log 2>&1") | crontab -
+(crontab -l 2>/dev/null; echo "0 3 * * * cd /home/haru/pihole-llm && ./venv/bin/python sweep.py >> sweep.log 2>&1") | crontab -
 ```
 
 ## 3. Maintenance
