@@ -12,7 +12,7 @@ MODEL_FILE = '/app/data/model.onnx' if os.path.exists('/app/data/model.onnx') el
 MAJESTIC_FILE = '/app/data/majestic.csv' if os.path.exists('/app/data') else os.path.join(os.path.dirname(__file__), 'majestic.csv')
 TIME_WINDOW_SEC = 300 # 5 minutes
 MAX_LEN = 100
-CONFIDENCE_THRESHOLD = 0.95
+CONFIDENCE_THRESHOLD = 0.99
 
 # Selective TLD Infrastructure Rule
 INFRASTRUCTURE_SUFFIXES = [
