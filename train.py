@@ -1,10 +1,11 @@
 import sqlite3
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 import joblib
-from features import extract_features
 import os
 import sys
 
@@ -46,16 +47,17 @@ def main():
     df = fetch_data()
     print(f"Total dataset size: {len(df)} domains")
 
-    print("Extracting features (this may take a minute)...")
-    # Apply feature extraction
-    feature_dicts = df['domain'].apply(extract_features)
-    X = pd.DataFrame(feature_dicts.tolist())
+    print("Training TF-IDF + Logistic Regression model...")
+    X = df['domain']
     y = df['label']
 
-    print("Training model...")
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
-    clf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    # Use character n-grams, extremely effective for finding domain patterns
+    clf = make_pipeline(
+        TfidfVectorizer(analyzer='char_wb', ngram_range=(3, 5), max_features=50000),
+        LogisticRegression(max_iter=1000, class_weight='balanced', n_jobs=-1)
+    )
     clf.fit(X_train, y_train)
 
     print("\nModel Evaluation:")

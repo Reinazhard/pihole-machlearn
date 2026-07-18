@@ -86,11 +86,8 @@ def main():
     print("Loading model and predicting...")
     clf = joblib.load(MODEL_FILE)
     
-    # Extract features for new domains
-    features_list = [extract_features(d) for d in new_domains]
-    X = pd.DataFrame(features_list)
-    
-    predictions = clf.predict(X)
+    # Predict directly on the domain strings
+    predictions = clf.predict(new_domains)
     
     # Identify which domains were classified as ads (label == 1)
     detected_ads = [domain for domain, pred in zip(new_domains, predictions) if pred == 1]
