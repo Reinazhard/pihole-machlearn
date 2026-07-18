@@ -32,8 +32,24 @@ def load_top_safe_domains(limit=100000):
     if not os.path.exists(MAJESTIC_FILE):
         return set()
     try:
+        # Load up to limit, but also ensure any subdomains in the list are treated properly.
+        # However, for bypass, we only care about the exact domain matches from the list.
+        # Majestic uses column 2 for the domain
         df = pd.read_csv(MAJESTIC_FILE, usecols=[2], names=['domain'], header=0, nrows=limit)
-        return set(df['domain'].str.lower().tolist())
+        
+        # Explicitly hardcode ultra-critical core domains that we never want blocked 
+        # just in case they drop out of majestic or fail to parse.
+        core_whitelist = {
+            'google.com', 'www.google.com', 'facebook.com', 'www.facebook.com', 
+            'instagram.com', 'www.instagram.com', 'whatsapp.com', 'www.whatsapp.com',
+            'apple.com', 'www.apple.com', 'microsoft.com', 'www.microsoft.com',
+            'amazon.com', 'www.amazon.com', 'netflix.com', 'www.netflix.com',
+            'youtube.com', 'www.youtube.com', 'twitter.com', 'www.twitter.com',
+            'linkedin.com', 'www.linkedin.com', 'reddit.com', 'www.reddit.com'
+        }
+        
+        loaded_domains = set(df['domain'].str.lower().tolist())
+        return loaded_domains.union(core_whitelist)
     except Exception as e:
         print(f"Error loading majestic.csv: {e}")
         return set()
