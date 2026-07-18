@@ -15,6 +15,33 @@ FTL_DB = os.environ.get('FTL_DB', '/etc/pihole/pihole-FTL.db')
 MAX_LEN = 100
 BATCH_SIZE = 512
 
+class AsymmetricFocalLoss(nn.Module):
+    def __init__(self, gamma_neg=4.0, gamma_pos=2.0, alpha=0.25):
+        super(AsymmetricFocalLoss, self).__init__()
+        self.gamma_neg = gamma_neg
+        self.gamma_pos = gamma_pos
+        self.alpha = alpha
+        self.ce = nn.CrossEntropyLoss(reduction='none')
+
+    def forward(self, inputs, targets):
+        ce_loss = self.ce(inputs, targets)
+        pt = torch.exp(-ce_loss)
+        
+        # Apply decoupled gammas based on true class
+        # targets == 0 (Safe) gets gamma_neg=4.0 to brutally penalize false positives
+        # targets == 1 (Ad) gets gamma_pos=2.0 for standard focusing
+        gamma_t = torch.where(targets == 0, 
+                              torch.tensor(self.gamma_neg).to(inputs.device), 
+                              torch.tensor(self.gamma_pos).to(inputs.device))
+                              
+        # Apply standard alpha weighting
+        alpha_t = torch.where(targets == 1, 
+                              torch.tensor(self.alpha).to(inputs.device), 
+                              torch.tensor(1 - self.alpha).to(inputs.device))
+                              
+        focal_loss = alpha_t * (1 - pt) ** gamma_t * ce_loss
+        return focal_loss.mean()
+
 class CharCNN(nn.Module):
     def __init__(self, vocab_size=256, embed_dim=32, num_classes=2):
         super(CharCNN, self).__init__()
@@ -124,11 +151,10 @@ def main():
     print(f"Training on device: {device}")
     
     model = CharCNN().to(device)
-    # Loss Function with class weights
-    # We heavily penalize false positives (predicting Safe as Ad) by weighting the Safe class (0) higher.
-    # Class 0 weight: 3.0, Class 1 weight: 1.0
-    weights = torch.tensor([3.0, 1.0]).to(device)
-    criterion = nn.CrossEntropyLoss(weight=weights)
+    # Loss Function: Asymmetric Focal Loss
+    # We brutally penalize false positives (predicting Safe as Ad) using Decoupled Gammas
+    # This mathematically reshapes the gradient curvature, forcing Safe domains toward 0.0 probability
+    criterion = AsymmetricFocalLoss(gamma_neg=4.0, gamma_pos=2.0, alpha=0.25)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     print("Training Char-CNN...")
