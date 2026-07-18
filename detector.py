@@ -39,8 +39,17 @@ def load_top_safe_domains(limit=100000):
         return set()
 
 def get_recent_allowed_domains():
-    ro_uri = f"file:{FTL_DB}?mode=ro"
-    conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    if not os.path.exists(FTL_DB):
+        print(f"Error: Database {FTL_DB} not found.")
+        return []
+    
+    # Try normal URI first, fallback to standard if URI fails (Docker mounted volumes can sometimes act weird with URI paths)
+    try:
+        ro_uri = f"file:{FTL_DB}?mode=ro"
+        conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    except sqlite3.OperationalError:
+        conn = sqlite3.connect(FTL_DB, timeout=20.0)
+        
     conn.text_factory = lambda b: b.decode(errors='ignore')
     recent_timestamp = int(time.time()) - TIME_WINDOW_SEC
     
@@ -58,9 +67,16 @@ def get_recent_allowed_domains():
 def filter_existing_blocks(domains):
     if not domains:
         return []
+        
+    if not os.path.exists(GRAVITY_DB):
+        return domains
     
-    ro_uri = f"file:{GRAVITY_DB}?mode=ro"
-    conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    try:
+        ro_uri = f"file:{GRAVITY_DB}?mode=ro"
+        conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    except sqlite3.OperationalError:
+        conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
+        
     placeholders = ','.join('?' for _ in domains)
     
     # Check exact blocks (type 1) and exact allows (type 0/2) to skip re-evaluating
@@ -76,8 +92,12 @@ def check_and_apply_wildcard(domains):
     if not domains:
         return domains # Return remaining domains to be exact-blocked
         
-    ro_uri = f"file:{GRAVITY_DB}?mode=ro"
-    conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    try:
+        ro_uri = f"file:{GRAVITY_DB}?mode=ro"
+        conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    except sqlite3.OperationalError:
+        conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
+        
     cursor = conn.cursor()
     
     # Extract root domains to check for DGA wildcard aggregation

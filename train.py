@@ -67,8 +67,12 @@ def fetch_data():
         sys.exit(1)
 
     print("Fetching ad domains from gravity.db...")
-    ro_uri = f"file:{GRAVITY_DB}?mode=ro"
-    conn_grav = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    try:
+        ro_uri = f"file:{GRAVITY_DB}?mode=ro"
+        conn_grav = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    except sqlite3.OperationalError:
+        conn_grav = sqlite3.connect(GRAVITY_DB, timeout=20.0)
+        
     conn_grav.text_factory = lambda b: b.decode(errors='ignore')
     df_ads = pd.read_sql_query("SELECT domain FROM gravity LIMIT 150000", conn_grav)
     conn_grav.close()

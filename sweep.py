@@ -12,8 +12,12 @@ def main():
         return
         
     # Read-only connection to prevent locking conflicts when reading
-    ro_uri = f"file:{GRAVITY_DB}?mode=ro"
-    conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    try:
+        ro_uri = f"file:{GRAVITY_DB}?mode=ro"
+        conn = sqlite3.connect(ro_uri, uri=True, timeout=20.0)
+    except sqlite3.OperationalError:
+        conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
+        
     cursor = conn.cursor()
     
     # 1. Find all exact domains added by the ML detector (type 1)
