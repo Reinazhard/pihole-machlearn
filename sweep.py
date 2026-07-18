@@ -47,13 +47,15 @@ def main():
     # 4. Ensure the local list is registered in Pi-hole (Need Write Connection)
     conn = sqlite3.connect(GRAVITY_DB, timeout=20.0)
     cursor = conn.cursor()
-    cursor.execute("SELECT address FROM adlist WHERE address = ?", (f"file://{ML_LIST_FILE}",))
+    # The Pi-hole container mounts this directory to /etc/pihole, so the internal Pi-hole URI must reflect that
+    pihole_internal_uri = "file:///etc/pihole/ml-blocklist.txt"
+    cursor.execute("SELECT address FROM adlist WHERE address = ?", (pihole_internal_uri,))
     if not cursor.fetchone():
         print("Registering ml-blocklist.txt in Pi-hole adlists...")
         cursor.execute("""
             INSERT INTO adlist (address, enabled, comment)
             VALUES (?, 1, 'ML Detector Sweep List')
-        """, (f"file://{ML_LIST_FILE}",))
+        """, (pihole_internal_uri,))
         conn.commit()
     conn.close()
     
