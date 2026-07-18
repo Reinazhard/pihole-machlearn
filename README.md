@@ -13,18 +13,19 @@ cd /home/haru/pihole-llm
 *This will output a `model.onnx` file.*
 
 ## 2. Enable the Background Scanner
-Once the model is trained, you need to enable the cron jobs. 
-1. The **Detector** runs every 5 minutes to instantly block new trackers.
-2. The **Sweeper** runs once a day at 3:00 AM to move those individual blocks into a single Pi-hole Adlist file, keeping your Pi-hole web UI perfectly clean.
+The ML Detector is deployed as a Docker container alongside your Pi-hole stack.
 
-Run this command in your terminal to enable both:
+To start it:
 ```bash
-(crontab -l 2>/dev/null; echo "*/5 * * * * cd /home/haru/pihole-llm && ./venv/bin/python detector.py >> detector.log 2>&1") | crontab -
-(crontab -l 2>/dev/null; echo "0 3 * * * cd /home/haru/pihole-llm && ./venv/bin/python sweep.py >> sweep.log 2>&1") | crontab -
+cd /opt/haru/dns-stack
+docker-compose up -d --build ml-detector
 ```
 
+The container uses an internal `cron` daemon to automatically run the detector every 5 minutes, and the sweeper daily at 3:00 AM. 
+
 ## 3. Maintenance
-- **Checking Logs:** You can monitor what the ML model is doing by viewing the log file:
-  `tail -f /home/haru/pihole-llm/detector.log`
-- **Whitelisting:** If the model accidentally blocks a service you use, edit the `whitelist_keywords` array in `/home/haru/pihole-llm/detector.py` and remove the domain from your Pi-hole web UI.
-- **Retraining:** Run `train.py` every few months to teach the model new tracker patterns.
+- **Checking Logs:** Monitor what the ML model is doing by viewing the docker logs:
+  `docker logs -f ml-detector`
+- **Whitelisting:** If the model accidentally blocks a service you use, edit the `whitelist_keywords` array in `/home/haru/pihole-llm/detector.py` and rebuild the container.
+- **Retraining:** Run `train.py` on the host to update `model.onnx`, then restart the container:
+  `docker restart ml-detector`
