@@ -158,7 +158,7 @@ def main():
         dummy_input, 
         "model.onnx", 
         export_params=True, 
-        opset_version=14, 
+        opset_version=18, # Upgraded opset version to 18 as requested by newer PyTorch versions
         do_constant_folding=True, 
         input_names=['input'], 
         output_names=['output'], 
