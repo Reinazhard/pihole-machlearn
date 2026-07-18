@@ -3,7 +3,6 @@ import pandas as pd
 import joblib
 import subprocess
 import time
-from features import extract_features
 import os
 
 GRAVITY_DB = os.environ.get('GRAVITY_DB', '/etc/pihole/gravity.db')
