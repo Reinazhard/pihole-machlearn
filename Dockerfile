@@ -15,9 +15,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY detector.py sweep.py train.py ./
 
 # Setup cron jobs
-# Redirecting output to /proc/1/fd/1 ensures `docker logs` will capture the script outputs
+# 1. detector.py every 5 mins
+# 2. sweep.py daily at 3:00 AM
+# 3. train.py monthly at 2:00 AM on the 1st
 RUN echo "*/5 * * * * cd /app && /usr/local/bin/python detector.py > /proc/1/fd/1 2>&1" > /etc/cron.d/ml-detector && \
     echo "0 3 * * * cd /app && /usr/local/bin/python sweep.py > /proc/1/fd/1 2>&1" >> /etc/cron.d/ml-detector && \
+    echo "0 2 1 * * cd /app && /usr/local/bin/python train.py > /proc/1/fd/1 2>&1" >> /etc/cron.d/ml-detector && \
     chmod 0644 /etc/cron.d/ml-detector && \
     crontab /etc/cron.d/ml-detector
 
