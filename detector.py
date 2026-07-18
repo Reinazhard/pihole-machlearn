@@ -9,9 +9,32 @@ import numpy as np
 GRAVITY_DB = os.environ.get('GRAVITY_DB', '/etc/pihole/gravity.db')
 FTL_DB = os.environ.get('FTL_DB', '/etc/pihole/pihole-FTL.db')
 MODEL_FILE = os.path.join(os.path.dirname(__file__), 'model.onnx')
+MAJESTIC_FILE = os.path.join(os.path.dirname(__file__), 'majestic.csv')
 TIME_WINDOW_SEC = 300 # 5 minutes
 MAX_LEN = 100
 CONFIDENCE_THRESHOLD = 0.95
+
+# Selective TLD Infrastructure Rule
+INFRASTRUCTURE_SUFFIXES = [
+    '.googleapis.com', 
+    '.akamaihd.net',
+    '.cloudfront.net',
+    '.amazonaws.com',
+    '.shopeemobile.com',
+    '.fbcdn.net',
+    '.googleusercontent.com',
+    '.susercontent.com'
+]
+
+def load_top_safe_domains(limit=10000):
+    if not os.path.exists(MAJESTIC_FILE):
+        return set()
+    try:
+        df = pd.read_csv(MAJESTIC_FILE, usecols=[2], names=['domain'], header=0, nrows=limit)
+        return set(df['domain'].str.lower().tolist())
+    except Exception as e:
+        print(f"Error loading majestic.csv: {e}")
+        return set()
 
 def get_recent_allowed_domains():
     conn = sqlite3.connect(FTL_DB)
@@ -83,7 +106,6 @@ def main():
     if not os.path.exists(MODEL_FILE):
         print("Model file not found. Please run train.py first.")
         return
-
     print("Fetching recent queries...")
     recent_domains = get_recent_allowed_domains()
     if not recent_domains:
@@ -92,23 +114,38 @@ def main():
 
     print(f"Checking {len(recent_domains)} domains against existing blocklists...")
     new_domains = filter_existing_blocks(recent_domains)
-    # Filter out domains that are known false positives using a quick whitelist check
-    # Many API subdomains trigger CNN structure alerts, we must exclude core services manually
-    whitelist_keywords = [
-        'googleapis.com', 'whatsapp.net', 'whatsapp.com', 'instagram.com', 
-        'shopee', 'reddit.com', 'mozilla.net', 'android.com', 'akamaihd.net'
-    ]
+    if not new_domains:
+        print("All recent domains are already evaluated or blocked.")
+        return
+
+    print("Loading Top 10k Safe Domains bypass list...")
+    top_10k_safe = load_top_safe_domains()
+
+    # Filter out domains that are known false positives using the dual-filter logic
     safe_new_domains = []
     for d in new_domains:
-        if any(kw in d.lower() for kw in whitelist_keywords):
-            print(f"Skipping whitelisted domain: {d}")
-        else:
+        d_lower = d.lower()
+        
+        # 1. Dynamic Top 10k Bypass (Strict Exact Match)
+        if d_lower in top_10k_safe:
+            print(f"Bypass (Top 10k): {d}")
+            continue
+            
+        # 2. Selective TLD Infrastructure Rule (Suffix Match)
+        is_infra = False
+        for suffix in INFRASTRUCTURE_SUFFIXES:
+            if d_lower.endswith(suffix):
+                print(f"Bypass (Infrastructure CDN): {d}")
+                is_infra = True
+                break
+                
+        if not is_infra:
             safe_new_domains.append(d)
     
     new_domains = safe_new_domains
     
     if not new_domains:
-        print("All recent domains are either blocked or whitelisted.")
+        print("All recent domains are either blocked or whitelisted via bypass lists.")
         return
 
     print("Loading ONNX model and predicting...")
