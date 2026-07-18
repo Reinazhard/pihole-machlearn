@@ -1,0 +1,29 @@
+services:
+  ml-detector:
+    build: .
+    container_name: ml-detector
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 8G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      - GRAVITY_DB=/etc/pihole/gravity.db
+      - FTL_DB=/etc/pihole/pihole-FTL.db
+      - ML_LIST_FILE=/etc/pihole/ml-blocklist.txt
+    volumes:
+      # Map your host Pi-hole directory to the container's /etc/pihole
+      - ./pihole/etc-pihole:/etc/pihole
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./model.onnx:/app/model.onnx
+
+networks:
+  default:
+    name: dns
+    external: true
