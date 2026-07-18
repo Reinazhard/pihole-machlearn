@@ -92,8 +92,23 @@ def main():
 
     print(f"Checking {len(recent_domains)} domains against existing blocklists...")
     new_domains = filter_existing_blocks(recent_domains)
+    # Filter out domains that are known false positives using a quick whitelist check
+    # Many API subdomains trigger CNN structure alerts, we must exclude core services manually
+    whitelist_keywords = [
+        'googleapis.com', 'whatsapp.net', 'whatsapp.com', 'instagram.com', 
+        'shopee', 'reddit.com', 'mozilla.net', 'android.com', 'akamaihd.net'
+    ]
+    safe_new_domains = []
+    for d in new_domains:
+        if any(kw in d.lower() for kw in whitelist_keywords):
+            print(f"Skipping whitelisted domain: {d}")
+        else:
+            safe_new_domains.append(d)
+    
+    new_domains = safe_new_domains
+    
     if not new_domains:
-        print("All recent domains are already evaluated or blocked.")
+        print("All recent domains are either blocked or whitelisted.")
         return
 
     print("Loading ONNX model and predicting...")
