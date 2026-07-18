@@ -21,11 +21,14 @@ cd /opt/haru/dns-stack
 docker-compose up -d --build ml-detector
 ```
 
-The container uses an internal `cron` daemon to automatically run the detector every 5 minutes, and the sweeper daily at 3:00 AM. 
+The container uses an internal `cron` daemon to automatically run:
+1. **Detector:** Every 5 minutes (Instantly evaluates new domains).
+2. **Sweeper:** Daily at 3:00 AM (Moves individual Pi-hole blocks into `ml-blocklist.txt` to keep the UI clean).
+3. **Trainer:** Monthly on the 1st at 2:00 AM (Downloads fresh Majestic Million safe domains, pulls new Ad domains from Pi-hole, and retrains the AI model to recognize new tracking patterns).
 
 ## 3. Maintenance
 - **Checking Logs:** Monitor what the ML model is doing by viewing the docker logs:
   `docker logs -f ml-detector`
 - **Whitelisting:** If the model accidentally blocks a service you use, edit the `whitelist_keywords` array in `/home/haru/pihole-llm/detector.py` and rebuild the container.
-- **Retraining:** Run `train.py` on the host to update `model.onnx`, then restart the container:
-  `docker restart ml-detector`
+- **Manual Retraining:** If you want to force a retraining outside of the monthly schedule, run:
+  `docker exec ml-detector python train.py`
