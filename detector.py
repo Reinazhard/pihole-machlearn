@@ -1,15 +1,23 @@
 import sqlite3
 import pandas as pd
 import onnxruntime as ort
+import xgboost as xgb
 import subprocess
 import time
 import os
+import joblib
 import numpy as np
+from network_prober import probe_domains
 
-GRAVITY_DB = os.environ.get('GRAVITY_DB', '/etc/pihole/gravity.db')
-FTL_DB = os.environ.get('FTL_DB', '/etc/pihole/pihole-FTL.db')
+# Use environment variables for DB paths to support generic Docker setups
+GRAVITY_DB = os.environ.get('GRAVITY_DB', '/etc-pihole/gravity.db')
+FTL_DB = os.environ.get('FTL_DB', '/etc-pihole/pihole-FTL.db')
+
 MODEL_FILE = '/app/data/model.onnx' if os.path.exists('/app/data/model.onnx') else os.path.join(os.path.dirname(__file__), 'model.onnx')
+META_MODEL = '/app/data/meta_model.json' if os.path.exists('/app/data') else os.path.join(os.path.dirname(__file__), 'meta_model.json')
+ENCODER_FILE = '/app/data/categorical_encoder.pkl' if os.path.exists('/app/data') else os.path.join(os.path.dirname(__file__), 'categorical_encoder.pkl')
 MAJESTIC_FILE = '/app/data/majestic.csv' if os.path.exists('/app/data') else os.path.join(os.path.dirname(__file__), 'majestic.csv')
+
 TIME_WINDOW_SEC = 300 # 5 minutes
 MAX_LEN = 100
 CONFIDENCE_THRESHOLD = 0.99
@@ -186,7 +194,7 @@ def block_domains(domains):
     
     timestamp = int(time.time())
     # type 1 = exact blacklist
-    records = [(1, domain, 1, timestamp, timestamp, 'Added by ML Detector (Char-CNN High Confidence)') for domain in domains]
+    records = [(1, domain, 1, timestamp, timestamp, 'Added by ML Detector (XGBoost High Confidence)') for domain in domains]
     
     cursor.executemany("""
         INSERT OR IGNORE INTO domainlist 
@@ -213,9 +221,10 @@ def softmax(x):
     return e_x / e_x.sum(axis=1, keepdims=True)
 
 def main():
-    if not os.path.exists(MODEL_FILE):
-        print("Model file not found. Please run train.py first.")
+    if not os.path.exists(MODEL_FILE) or not os.path.exists(META_MODEL) or not os.path.exists(ENCODER_FILE):
+        print("Models not fully initialized. Please ensure Phase 1 and 2 are completed.")
         return
+        
     print("Fetching recent queries...")
     recent_domains = get_recent_allowed_domains()
     if not recent_domains:
@@ -228,6 +237,9 @@ def main():
         print("All recent domains are already evaluated or blocked.")
         return
 
+    # ---------------------------------------------------------
+    # Layer 1: Deterministic Bypass
+    # ---------------------------------------------------------
     print("Loading Top 10k Safe Domains bypass list...")
     top_10k_safe = load_top_safe_domains()
 
@@ -236,12 +248,12 @@ def main():
     for d in new_domains:
         d_lower = d.lower()
         
-        # 1. Dynamic Top 10k Bypass (Strict Exact Match)
+        # Dynamic Top 10k Bypass (Strict Exact Match)
         if d_lower in top_10k_safe:
             print(f"Bypass (Top 10k): {d}")
             continue
             
-        # 2. Selective TLD Infrastructure Rule (Suffix Match)
+        # Selective TLD Infrastructure Rule (Suffix Match)
         is_infra = False
         for suffix in INFRASTRUCTURE_SUFFIXES:
             if d_lower.endswith(suffix):
@@ -258,26 +270,62 @@ def main():
         print("All recent domains are either blocked or whitelisted via bypass lists.")
         return
 
-    print("Loading ONNX model and predicting...")
+    # ---------------------------------------------------------
+    # Layer 2: Parallel Feature Extraction (ONNX + Network Probes)
+    # ---------------------------------------------------------
+    print("Extracting live network features and CNN probabilities...")
+    
+    # 2a. Run ONNX Char-CNN pre-score
     session = ort.InferenceSession(MODEL_FILE, providers=['CPUExecutionProvider'])
     input_name = session.get_inputs()[0].name
+    X_cnn = encode_domains(new_domains)
+    outputs = session.run(None, {input_name: X_cnn})[0]
+    cnn_probs = softmax(outputs)[:, 1]
     
-    X = encode_domains(new_domains)
-    outputs = session.run(None, {input_name: X})[0]
+    # 2b. Run Active Network Probes
+    df_live = probe_domains(new_domains)
+    if df_live.empty:
+        print("Network prober returned no data.")
+        return
+        
+    df_live['cnn_prob'] = cnn_probs
     
-    probabilities = softmax(outputs)
-    ad_probs = probabilities[:, 1]
+    # ---------------------------------------------------------
+    # Layer 3: Meta-Inference (XGBoost)
+    # ---------------------------------------------------------
+    print("Executing Sensor Fusion via XGBoost Meta-Learner...")
     
+    # Load Categorical Encoder and Model
+    encoder = joblib.load(ENCODER_FILE)
+    clf = xgb.XGBClassifier()
+    clf.load_model(META_MODEL)
+    
+    # Apply Encoder
+    cat_cols = ['asn', 'tls_issuer']
+    df_live[cat_cols] = df_live[cat_cols].fillna('MISSING')
+    df_live[cat_cols] = encoder.transform(df_live[cat_cols])
+    
+    # Ensure numeric types for Sparsity-Aware split finding
+    df_live['domain_age_days'] = pd.to_numeric(df_live['domain_age_days'], errors='coerce')
+    df_live['tls_timeout'] = pd.to_numeric(df_live['tls_timeout'], errors='coerce')
+    
+    # Drop domain name before inference
+    X_meta = df_live.drop(columns=['domain'])
+    
+    # Get probabilities
+    meta_probs = clf.predict_proba(X_meta)[:, 1]
+    
+    # Actuation
     detected_ads = []
-    for domain, prob in zip(new_domains, ad_probs):
-        if prob > CONFIDENCE_THRESHOLD:
+    for domain, prob in zip(df_live['domain'], meta_probs):
+        if prob >= CONFIDENCE_THRESHOLD:
             detected_ads.append(domain)
-            print(f"ML Detected Ad/Tracker: {domain} (Confidence: {prob:.4f})")
+            print(f"Meta-Learner Detected Ad/Tracker: {domain} (Confidence: {prob:.4f})")
     
     if detected_ads:
         block_domains(detected_ads)
     else:
-        print("No new ad/tracker domains detected in this batch exceeding the confidence threshold.")
+        print("No new ad/tracker domains detected in this batch exceeding the meta-confidence threshold.")
 
 if __name__ == '__main__':
     main()
