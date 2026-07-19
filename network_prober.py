@@ -5,6 +5,9 @@ import ssl
 import pandas as pd
 import ipaddress
 import random
+import os
+import sys
+import contextlib
 from collections import Counter
 from datetime import datetime
 from dateutil.parser import parse as parse_date
@@ -200,8 +203,11 @@ def probe_domains(domains):
     """
     if not domains:
         return pd.DataFrame()
-        
-    return asyncio.run(_probe_domains_async(domains))
+    
+    # Suppress noisy pycares CFFI callback exceptions printed to stderr
+    with open(os.devnull, 'w') as devnull:
+        with contextlib.redirect_stderr(devnull):
+            return asyncio.run(_probe_domains_async(domains))
 
 if __name__ == '__main__':
     # Quick sanity test block
