@@ -12,7 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
-COPY detector.py sweep.py train.py ./
+COPY detector.py sweep.py train.py network_prober.py ./
 
 # Provide a dummy script to run initial training on container startup instead of build time
 # It also dumps the Docker environment variables into /etc/environment so Cron can read them
