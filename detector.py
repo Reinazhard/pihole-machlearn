@@ -22,25 +22,7 @@ TIME_WINDOW_SEC = 300 # 5 minutes
 MAX_LEN = 100
 CONFIDENCE_THRESHOLD = 0.99
 
-# Selective TLD Infrastructure Rule
-INFRASTRUCTURE_SUFFIXES = [
-    '.googleapis.com', 
-    '.akamaihd.net',
-    '.cloudfront.net',
-    '.amazonaws.com',
-    '.shopeemobile.com',
-    '.fbcdn.net',
-    '.googleusercontent.com',
-    '.susercontent.com',
-    '.gstatic.com',
-    '.whatsapp.net',
-    '.facebook.com',
-    '.facebook.net',
-    '.instagram.com',
-    '.discord.gg',
-    '.discordapp.com',
-    '.twimg.com'
-]
+# Selective TLD Infrastructure Rule has been migrated to network_prober.py and XGBoost
 
 def load_top_safe_domains(limit=100000):
     if not os.path.exists(MAJESTIC_FILE):
@@ -243,7 +225,7 @@ def main():
     print("Loading Top 10k Safe Domains bypass list...")
     top_10k_safe = load_top_safe_domains()
 
-    # Filter out domains that are known false positives using the dual-filter logic
+    # Filter out domains that are known false positives using exact matches only
     safe_new_domains = []
     for d in new_domains:
         d_lower = d.lower()
@@ -252,17 +234,8 @@ def main():
         if d_lower in top_10k_safe:
             print(f"Bypass (Top 10k): {d}")
             continue
-            
-        # Selective TLD Infrastructure Rule (Suffix Match)
-        is_infra = False
-        for suffix in INFRASTRUCTURE_SUFFIXES:
-            if d_lower.endswith(suffix):
-                print(f"Bypass (Infrastructure CDN): {d}")
-                is_infra = True
-                break
                 
-        if not is_infra:
-            safe_new_domains.append(d)
+        safe_new_domains.append(d)
     
     new_domains = safe_new_domains
     
@@ -310,7 +283,7 @@ def main():
     df_live['tls_timeout'] = pd.to_numeric(df_live['tls_timeout'], errors='coerce')
     
     # Ensure correct column order exactly matching training phase
-    expected_cols = ['cnn_prob', 'asn', 'asn_variance_score', 'ipv6_only', 'tls_issuer', 'tls_timeout', 'domain_age_days']
+    expected_cols = ['cnn_prob', 'asn', 'asn_variance_score', 'ipv6_only', 'tls_issuer', 'tls_timeout', 'domain_age_days', 'is_core_infra']
     X_meta = df_live[expected_cols]
     
     # Get probabilities
