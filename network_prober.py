@@ -15,6 +15,25 @@ SEMAPHORE_LIMIT = 100
 CYMRU_V4 = 'origin.asn.cymru.com'
 CYMRU_V6 = 'origin6.asn.cymru.com'
 
+INFRASTRUCTURE_SUFFIXES = (
+    '.googleapis.com', 
+    '.akamaihd.net',
+    '.cloudfront.net',
+    '.amazonaws.com',
+    '.shopeemobile.com',
+    '.fbcdn.net',
+    '.googleusercontent.com',
+    '.susercontent.com',
+    '.gstatic.com',
+    '.whatsapp.net',
+    '.facebook.com',
+    '.facebook.net',
+    '.instagram.com',
+    '.discord.gg',
+    '.discordapp.com',
+    '.twimg.com'
+)
+
 async def _timeout(coro, timeout=TIMEOUT_SEC):
     """Wrapper to strictly enforce timeouts and swallow errors."""
     try:
@@ -135,6 +154,9 @@ async def _extract_all(domain, sem, resolver, session):
         # Unpack ASN tuple if valid
         asn, variance, ipv6_only = asn_result if asn_result else (None, 0.0, False)
         
+        # Calculate lexical infrastructure flag
+        is_core_infra = True if domain.lower().endswith(INFRASTRUCTURE_SUFFIXES) else False
+        
         return {
             "domain": domain,
             "asn": asn,
@@ -142,7 +164,8 @@ async def _extract_all(domain, sem, resolver, session):
             "ipv6_only": ipv6_only,
             "tls_issuer": tls,
             "tls_timeout": tls is None,
-            "domain_age_days": age
+            "domain_age_days": age,
+            "is_core_infra": is_core_infra
         }
 
 async def _probe_domains_async(domains):
@@ -164,7 +187,8 @@ async def _probe_domains_async(domains):
             clean_results.append({
                 "domain": d, "asn": None, "asn_variance_score": 0.0,
                 "ipv6_only": False, "tls_issuer": None, 
-                "tls_timeout": True, "domain_age_days": None
+                "tls_timeout": True, "domain_age_days": None,
+                "is_core_infra": False
             })
             
     return pd.DataFrame(clean_results)
