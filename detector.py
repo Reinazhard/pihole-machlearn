@@ -309,8 +309,9 @@ def main():
     df_live['domain_age_days'] = pd.to_numeric(df_live['domain_age_days'], errors='coerce')
     df_live['tls_timeout'] = pd.to_numeric(df_live['tls_timeout'], errors='coerce')
     
-    # Drop domain name before inference
-    X_meta = df_live.drop(columns=['domain'])
+    # Ensure correct column order exactly matching training phase
+    expected_cols = ['cnn_prob', 'asn', 'asn_variance_score', 'ipv6_only', 'tls_issuer', 'tls_timeout', 'domain_age_days']
+    X_meta = df_live[expected_cols]
     
     # Get probabilities
     meta_probs = clf.predict_proba(X_meta)[:, 1]
