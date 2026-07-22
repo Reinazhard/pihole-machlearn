@@ -2,7 +2,6 @@ import sqlite3
 import pandas as pd
 import onnxruntime as ort
 import xgboost as xgb
-import subprocess
 import time
 import os
 import joblib
@@ -187,8 +186,7 @@ def block_domains(domains):
     conn.commit()
     conn.close()
     
-    print("Reloading Pi-hole DNS lists...")
-    subprocess.run(["docker", "exec", "pihole", "pihole", "reloaddns"], check=False)
+    # FTL auto-reloads gravity.db changes — no docker exec needed
 
 def encode_domains(domains):
     encoded = np.zeros((len(domains), MAX_LEN), dtype=np.int64)

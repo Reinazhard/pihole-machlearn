@@ -11,3 +11,5 @@ onnx
 onnxscript
 aiohttp
 aiodns
+xgboost
+python-dateutil
